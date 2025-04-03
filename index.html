@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <title>Apartment Follower</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/terminal.css@0.7.2/dist/terminal.min.css">
+  <style>
+    .pasado { background-color: #80000020; }
+    .futuro { background-color: #00640020; }
+    .oculto { display: none; }
+    .borrar { color: #ff5f5f; cursor: pointer; background: none; border: 1px solid #ff5f5f; padding: 2px 6px; }
+    .copiar { color: #5fafff; background: none; border: 1px solid #5fafff; margin-left: 6px; padding: 2px 6px; cursor: pointer; }
+
+    /* Toast flotante arriba */
+    #toast {
+      position: fixed;
+      top: 10px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: #5fafff;
+      color: black;
+      padding: 8px 16px;
+      border: 1px solid #fff;
+      font-weight: bold;
+      display: none;
+      z-index: 1000;
+    }
+  </style>
+</head>
+<body class="terminal container">
+
+  <div id="toast">¡Copiado al portapapeles!</div>
+
+  <h1>Hora actual: <span id="hora-actual"></span></h1>
+
+  <div class="form-group">
+    <label for="pais">Zona horaria:</label>
+    <select id="pais">
+      <option value="America/Santiago">Chile</option>
+      <option value="America/Mexico_City">México</option>
+      <option value="America/Bogota">Colombia</option>
+      <option value="America/Lima">Perú</option>
+    </select>
+  </div>
+
+  <form id="formulario" class="form-group">
+    <input type="text" id="nombre" placeholder="Nombre" required>
+    <input type="text" id="namespace" placeholder="Namespace" required>
+    <input type="text" id="fecha" placeholder="Fecha UTC (ej: 25-04-2025T21:19)" required>
+    <button type="submit" class="btn">Agregar</button>
+  </form>
+
+  <div id="contenedor-tabla">
+    <table class="table">
+      <thead>
+        <tr><th>Nombre</th><th>Namespace</th><th>Fecha local</th><th>Acción</th></tr>
+      </thead>
+      <tbody id="tabla"></tbody>
+    </table>
+  </div>
+
+  <script>
+    const tabla = document.getElementById("tabla");
+    const horaActualEl = document.getElementById("hora-actual");
+    const contenedorTabla = document.getElementById("contenedor-tabla");
+    const paisSelect = document.getElementById("pais");
+    const toast = document.getElementById("toast");
+
+    function mostrarToast(mensaje) {
+      toast.textContent = mensaje;
+      toast.style.display = "block";
+      setTimeout(() => { toast.style.display = "none"; }, 1500);
+    }
+
+    function cargarDatos() {
+      const datos = JSON.parse(localStorage.getItem("elementos") || "[]");
+      tabla.innerHTML = "";
+      const zona = paisSelect.value;
+      const ahoraUTC = new Date();
+      const ahoraLocal = new Date(ahoraUTC.toLocaleString("en-US", { timeZone: zona }));
+
+      datos.forEach(({ nombre, namespace, fechaUTC }, index) => {
+        const fechaObj = new Date(fechaUTC);
+        const fechaLocal = new Date(fechaObj.toLocaleString("en-US", { timeZone: zona }));
+
+        const tr = document.createElement("tr");
+        tr.className = fechaLocal < ahoraLocal ? "pasado" : "futuro";
+
+        const fechaStr = `${fechaLocal.getFullYear()}-${(fechaLocal.getMonth() + 1).toString().padStart(2, '0')}-${fechaLocal.getDate().toString().padStart(2, '0')} ${fechaLocal.getHours().toString().padStart(2, '0')}:${fechaLocal.getMinutes().toString().padStart(2, '0')}`;
+
+        tr.innerHTML = `
+          <td>${nombre}</td>
+          <td>
+            <span class="ns-text">${namespace}</span>
+            <button class="copiar" data-text="${namespace}">Copiar</button>
+          </td>
+          <td>${fechaStr}</td>
+          <td><button class="borrar" data-index="${index}">Borrar</button></td>
+        `;
+        tabla.appendChild(tr);
+      });
+    }
+
+    function actualizarHoraActual() {
+      const zona = paisSelect.value;
+      const ahora = new Date();
+      const local = new Date(ahora.toLocaleString("en-US", { timeZone: zona }));
+      horaActualEl.textContent = local.toLocaleString();
+    }
+
+    function parseFechaPersonalizada(texto) {
+      const match = texto.match(/^(\d{2})-(\d{2})-(\d{4})T(\d{2}):(\d{2})$/);
+      if (!match) throw new Error("Formato inválido");
+      const [ , dd, mm, yyyy, hh, min ] = match;
+      return new Date(Date.UTC(yyyy, mm - 1, dd, hh, min));
+    }
+
+    document.getElementById("formulario").addEventListener("submit", e => {
+      e.preventDefault();
+      const nombre = document.getElementById("nombre").value;
+      const namespace = document.getElementById("namespace").value;
+      const fechaTexto = document.getElementById("fecha").value;
+
+      try {
+        const fecha = parseFechaPersonalizada(fechaTexto);
+        const fechaUTC = fecha.toISOString();
+        const datos = JSON.parse(localStorage.getItem("elementos") || "[]");
+        datos.push({ nombre, namespace, fechaUTC });
+        localStorage.setItem("elementos", JSON.stringify(datos));
+        e.target.reset();
+        cargarDatos();
+      } catch (err) {
+        alert("Fecha inválida. Usa formato: 04-04-2025T21:19");
+      }
+    });
+
+    tabla.addEventListener("click", e => {
+      if (e.target.classList.contains("borrar")) {
+        const index = e.target.dataset.index;
+        const datos = JSON.parse(localStorage.getItem("elementos") || "[]");
+        datos.splice(index, 1);
+        localStorage.setItem("elementos", JSON.stringify(datos));
+        cargarDatos();
+      }
+
+      if (e.target.classList.contains("copiar")) {
+        const texto = e.target.dataset.text;
+        navigator.clipboard.writeText(texto)
+          .then(() => {
+            e.target.textContent = "Copiado";
+            mostrarToast("¡Copiado al portapapeles!");
+            setTimeout(() => e.target.textContent = "Copiar", 1000);
+          })
+          .catch(() => alert("Error al copiar"));
+      }
+    });
+
+    paisSelect.addEventListener("change", () => {
+      actualizarHoraActual();
+      cargarDatos();
+    });
+
+    setInterval(() => {
+      actualizarHoraActual();
+      cargarDatos();
+    }, 1000);
+
+    actualizarHoraActual();
+    cargarDatos();
+  </script>
+</body>
+</html>
